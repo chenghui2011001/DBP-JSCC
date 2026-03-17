@@ -331,6 +331,16 @@ bash scripts/build_feature_tools.sh /path/to/modified_opus
 
 The current public training loader expects aligned files on disk, not raw WAV manifests.
 
+Public speech data can be obtained from:
+
+- https://media.xiph.org/lpcnet/speech/tts_speech_negative_16k.sw
+
+The corresponding `in_speech.pcm` input is expected to be:
+
+- raw 16-bit PCM
+- mono
+- sampled at `16 kHz`
+
 Minimal dataset layout:
 
 ```text

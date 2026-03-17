@@ -12,6 +12,16 @@ extract the required 36-dim vocoder features.
 
 Training is different. The current public training loader expects an aligned PCM file plus an aligned feature file on disk.
 
+Public speech data can be obtained from:
+
+- https://media.xiph.org/lpcnet/speech/tts_speech_negative_16k.sw
+
+The corresponding `in_speech.pcm` input is expected to be:
+
+- raw 16-bit PCM
+- mono
+- sampled at `16 kHz`
+
 ## Minimal Training Dataset Layout
 
 The simplest supported layout is:
