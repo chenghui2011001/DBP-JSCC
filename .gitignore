@@ -41,6 +41,7 @@ outputs/
 audio_samples*/
 visualizations*/
 experiments/
+release_assets/
 
 # Environment
 .env

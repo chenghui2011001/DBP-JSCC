@@ -99,6 +99,42 @@ Prepare these locally:
 - BER table such as `./artifacts/jscc_ber_table.json`
 - external `dump_data` binary for WAV feature extraction
 
+## Weights From Releases
+
+Prebuilt weights are published on GitHub Releases:
+
+- `https://github.com/chenghui2011001/DBP-JSCC/releases`
+
+Download and place the files as follows:
+
+- `dbp_jscc_model_only_step703800_epoch42.pth`
+  Place at `./checkpoints/dbp_jscc_reference/dbp_jscc_model_only_step703800_epoch42.pth`
+- `dbp_jscc_vocoder_pretrained.pth`
+  Place at `./vocoder_pt/dbp_jscc_vocoder_pretrained.pth`
+- `dbp_jscc_resume_full_step703800_epoch42.pth`
+  Optional. Place at `./checkpoints/dbp_jscc_reference/dbp_jscc_resume_full_step703800_epoch42.pth` when you need full training resume state
+
+Recommended local layout:
+
+```text
+artifacts/
+  jscc_ber_table.json
+
+checkpoints/
+  dbp_jscc_reference/
+    dbp_jscc_model_only_step703800_epoch42.pth
+    dbp_jscc_resume_full_step703800_epoch42.pth
+
+vocoder_pt/
+  dbp_jscc_vocoder_pretrained.pth
+```
+
+Usage notes:
+
+- For inference, use `dbp_jscc_model_only_step703800_epoch42.pth` as `--ckpt`
+- For standalone vocoder initialization, point `vocoder_ckpt` to `./vocoder_pt/dbp_jscc_vocoder_pretrained.pth`
+- For exact training resume, use `dbp_jscc_resume_full_step703800_epoch42.pth`
+
 ## Notes
 
 - `mamba/` and `mamba_ssm/` are used by the model code and may require local CUDA compilation
