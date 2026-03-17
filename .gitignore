@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Data files and model weights
+*.f32
+*.pcm
+*.wav
+*.mp3
+*.pth
+*.pt
+*.ckpt
+data_*/
+datasets/
+fargan_pt/
+
+# Training outputs
+checkpoints*/
+logs/
+outputs/
+audio_samples*/
+visualizations*/
+experiments/
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints
+
+# Cache
+.cache/
+*.cache
+
+# Large model files
+hubert_base/
+
+# External repositories (submodules)
+external_repos/
+Aether-lite_bak/external_repos/
+
+# Backup directories
+*_bak/
+*_backup/*.zip

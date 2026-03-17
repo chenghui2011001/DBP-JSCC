@@ -1,0 +1,63 @@
+Recommended public upload set:
+
+training/
+- train.py
+- train_pipeline.py
+- train_support.py
+- spectral_losses.py
+
+scripts/
+- infer_wav.py
+- infer_features.py
+
+models/
+- dual_branch_bark_jscc.py
+- hash_bottleneck.py
+- rvq_bottleneck.py
+- hifi_discriminators.py
+- bfcc_vocoder.py
+- feature_adapter.py
+- lite_speech_jscc.py
+- vmamba_jscc2d.py
+
+models/vocoder implementation/
+- vocoder_decoder.py
+- vocoder_components.py
+
+utils/
+- channel_sim.py
+- audio_visualizer.py
+- real_data_loader.py
+- ssim.py
+- feature_spec.py
+- metrics.py
+
+configs/
+- multistage_training.json
+- resume_run.json
+
+docs/
+- training_guide.md
+- upload_manifest.txt
+
+root files:
+- README.md
+- requirements.txt
+- LICENSE
+- .gitignore
+- AGENTS.md
+
+keep these directories if the public repo depends on local source installs:
+- mamba/
+- mamba_ssm/
+
+do not upload:
+- data/
+- data_cn/
+- wandb/
+- runs/
+- outputs/
+- checkpoints_*/
+- *.pth
+- *.pt
+- *.onnx
