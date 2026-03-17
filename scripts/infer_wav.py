@@ -14,9 +14,9 @@ Key properties
 - If the checkpoint was trained with hash/RVQ enabled, the model
   forward path will also go through the hash/RVQ bottlenecks.
   If not, it will fall back to the non‑hash forward path.
-- FARGAN 36‑dim features are derived directly from the input audio
-  via :class:`Feature48To36Adapter`, without relying on any on‑disk
-  dataset layout.
+- 36-dim vocoder features are extracted from the input audio with a
+  compatible external feature extractor, without relying on any
+  on-disk dataset layout.
 - Visualisation is done via
   :func:`utils.audio_visualizer.create_audio_comparison_plot`.
   In addition, three CSV files are exported with the raw time
@@ -30,6 +30,7 @@ Usage example
     python scripts/infer_wav.py \
         --ckpt ./outputs/checkpoints/checkpoint_step_010000_epoch_00.pth \
         --wav ./examples/test.wav \
+        --feature_bin /home/bluestar/fargan_demo/fargan_demo \
         --out_dir ./outputs/infer_wav
 
 The script will create ``audio/`` and ``plots/`` sub‑folders under
@@ -41,7 +42,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
@@ -57,6 +57,12 @@ from models.dual_branch_bark_jscc import DualBranchBarkJSCC  # type: ignore
 from training.train_support import build_model  # type: ignore
 from utils.channel_sim import ChannelSimulator  # type: ignore
 from utils.audio_visualizer import create_audio_comparison_plot  # type: ignore
+from utils.feature_extraction import (  # type: ignore
+    concatenate_inputs_to_pcm,
+    load_feature_pcm_pair,
+    resolve_feature_extractor,
+    run_feature_extractor,
+)
 
 
 def _load_checkpoint(path: Path, device: torch.device) -> Dict[str, Any]:
@@ -110,71 +116,36 @@ def _build_model_from_ckpt_cfg(ckpt: Dict[str, Any], device: torch.device) -> Tu
     return model, cfg
 
 
-def _run_dump_data_on_wav(
+def _run_feature_extractor_on_wav(
     wav_path: Path,
-    dump_bin: Path,
+    feature_bin: Path,
     work_dir: Path,
     device: torch.device,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Use external ``dump_data`` to extract FARGAN 36‑dim features.
-
-    The binary is expected to follow the LPCNet/FARGAN interface::
-
-        dump_data -train input.s16 output_features.f32 output_pcm.pcm
-
-    where ``output_features.f32`` contains 36‑dim features at 100 Hz
-    and ``output_pcm.pcm`` is the aligned training waveform.
-
-    Returns
-    -------
-    audio_real : torch.Tensor
-        Real audio waveform [1, L] reconstructed by ``dump_data``.
-    feats36 : torch.Tensor
-        FARGAN features [1, T, 36] for JSCC input.
-    """
+    """Use a compatible external feature extractor to build 36-dim vocoder features."""
 
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1) Load WAV, convert to 16 kHz mono and then to int16 PCM.
-    wav, sr = torchaudio.load(str(wav_path))
-    if wav.dim() == 2 and wav.size(0) > 1:
-        wav = wav.mean(dim=0, keepdim=True)
-    if sr != 16000:
-        wav = torchaudio.functional.resample(wav, sr, 16000)
-    audio_f = wav.squeeze(0).to(torch.float32)
-    audio_clamped = torch.clamp(audio_f, -1.0, 1.0)
-    audio_i16 = (audio_clamped * 32767.0).round().to(torch.int16).cpu().numpy()
-
     in_pcm = work_dir / "input.s16"
-    with open(in_pcm, "wb") as f_pcm:
-        f_pcm.write(audio_i16.tobytes())
-
-    # 2) Run dump_data in training mode to get aligned PCM + features.
     feat_path = work_dir / "features.f32"
     pcm_out_path = work_dir / "out_speech.pcm"
 
-    cmd = [str(dump_bin), "-train", str(in_pcm), str(feat_path), str(pcm_out_path)]
-    print(f"[Infer] Running dump_data: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True)
+    concatenate_inputs_to_pcm([wav_path], in_pcm)
+    meta = run_feature_extractor(
+        input_pcm=in_pcm,
+        output_features=feat_path,
+        output_pcm=pcm_out_path,
+        extractor_bin=feature_bin,
+    )
+    print(
+        "[Infer] Feature extraction finished: "
+        f"mode={meta['extractor_mode']}, frames={meta['feature_frames']}, "
+        f"duration={meta['duration_s']:.2f}s",
+    )
 
-    # 3) Load aligned PCM as real audio.
-    audio_out_i16 = np.fromfile(str(pcm_out_path), dtype=np.int16)
-    if audio_out_i16.size == 0:
-        raise RuntimeError(f"dump_data produced empty PCM: {pcm_out_path}")
-    audio_real = torch.from_numpy(audio_out_i16.astype(np.float32) / 32768.0).to(device=device)
-    audio_real = audio_real.unsqueeze(0)  # [1, L]
-
-    # 4) Load 36‑dim FARGAN features.
-    feat_np = np.fromfile(str(feat_path), dtype=np.float32)
-    if feat_np.size == 0:
-        raise RuntimeError(f"dump_data produced empty feature file: {feat_path}")
-    if feat_np.size % 36 != 0:
-        raise RuntimeError(
-            f"Unexpected feature length {feat_np.size}; expected multiple of 36 (got {feat_np.size/36:.3f} frames)"
-        )
-    T = feat_np.size // 36
-    feats36 = torch.from_numpy(feat_np.reshape(T, 36)).to(device=device, dtype=torch.float32)
-    feats36 = feats36.unsqueeze(0)  # [1, T, 36]
+    audio_out_i16, feat_np = load_feature_pcm_pair(feat_path, pcm_out_path)
+    audio_real = torch.from_numpy(audio_out_i16.astype(np.float32) / 32768.0).to(device=device).unsqueeze(0)
+    feats36 = torch.from_numpy(feat_np).to(device=device, dtype=torch.float32).unsqueeze(0)
 
     return audio_real, feats36
 
@@ -182,12 +153,13 @@ def _run_dump_data_on_wav(
 def _extract_fargan_feats_from_audio(*args: Any, **kwargs: Any) -> torch.Tensor:  # pragma: no cover - legacy stub
     """Legacy stub kept for backward compatibility.
 
-    The current inference path uses ``dump_data`` to obtain FARGAN
-    36‑dim features, so this function is no longer used.
+    The current inference path uses an external feature extractor to
+    obtain aligned 36-dim vocoder features, so this function is no
+    longer used.
     """
 
     raise RuntimeError(
-        "_extract_fargan_feats_from_audio is deprecated; use dump_data-based path instead",
+        "_extract_fargan_feats_from_audio is deprecated; use the feature-extractor path instead",
     )
 
 
@@ -212,16 +184,11 @@ def run_single_wav_inference(args: argparse.Namespace) -> None:
         f"quantizer_type={getattr(model, 'quantizer_type', 'unknown')}"
     )
 
-    print(f"[Infer] Loading WAV & extracting features via dump_data: {wav_path}")
-
-    dump_bin = Path(os.environ.get("DUMP_DATA_BIN", "/home/bluestar/FARGAN/opus/dump_data")).expanduser()
-    if not dump_bin.is_file():
-        raise FileNotFoundError(
-            f"dump_data binary not found: {dump_bin}. Set DUMP_DATA_BIN env to override.",
-        )
+    print(f"[Infer] Loading WAV & extracting 36D vocoder features: {wav_path}")
+    feature_bin = resolve_feature_extractor(args.feature_bin or os.environ.get("VOCODER_FEATURE_BIN"))
 
     tmp_dir = out_dir / "dump_tmp"
-    audio_b, feats_b = _run_dump_data_on_wav(wav_path, dump_bin, tmp_dir, device)
+    audio_b, feats_b = _run_feature_extractor_on_wav(wav_path, feature_bin, tmp_dir, device)
 
     # Channel simulator; SNR range from cfg (used by forward_with_hash).
     # Pass the runtime device explicitly so that CSI tensors live on
@@ -334,6 +301,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--ckpt", type=str, required=True, help="Path to a DBP-JSCC checkpoint")
     p.add_argument("--wav", type=str, required=True, help="Input WAV file (16 kHz recommended)")
     p.add_argument("--out_dir", type=str, required=True, help="Output directory for audio/plots/CSVs")
+    p.add_argument("--feature_bin", type=str, default=None, help="Path to external feature extractor. Compatible with dump_data -train and fargan_demo -features")
     p.add_argument("--device", type=str, default=None, help="Device override, e.g. 'cuda:0' or 'cpu'")
     return p.parse_args()
 

@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""DBP-JSCC inference from pre-dumped features.
+"""DBP-JSCC inference from prepared feature dumps.
 
-This script assumes you have already run the external ``dump_data``
-binary to obtain aligned 36‑dim FARGAN features and PCM audio::
-
-    /home/bluestar/FARGAN/opus/dump_data \
-        -train in_speech.pcm out_features.f32 out_speech.pcm
+This script assumes you already have an aligned 36-dim feature stream
+plus PCM audio, for example from ``scripts/prepare_dataset.py``.
 
 Given ``out_features.f32`` and ``out_speech.pcm``, the script:
 
@@ -18,7 +15,7 @@ Given ``out_features.f32`` and ``out_speech.pcm``, the script:
 4. Uses :mod:`utils.audio_visualizer` to create a waveform/F0/Bark
    comparison plot and exports CSVs for external plotting.
 
-The path to the heavy ``dump_data`` binary is **not** used here;
+The path to the external feature extractor is **not** used here;
 feature dumping should be done beforehand.
 """
 
@@ -42,6 +39,7 @@ from models.dual_branch_bark_jscc import DualBranchBarkJSCC  # type: ignore
 from training.train_support import build_model  # type: ignore
 from utils.channel_sim import ChannelSimulator  # type: ignore
 from utils.audio_visualizer import create_audio_comparison_plot  # type: ignore
+from utils.feature_extraction import load_feature_pcm_pair  # type: ignore
 
 
 def _load_checkpoint(path: Path, device: torch.device) -> Dict[str, Any]:
@@ -89,41 +87,25 @@ def _build_model_from_ckpt_cfg(ckpt: Dict[str, Any], device: torch.device) -> Tu
     return model, cfg
 
 
-def _load_dump_data_outputs(
+def _load_feature_outputs(
     features_path: Path,
     pcm_path: Path,
     device: torch.device,
     max_frames: int,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Load 36‑dim FARGAN features and aligned PCM from dump_data outputs.
+    """Load 36-dim vocoder features and aligned PCM from prepared files.
 
     Crops both features and audio to at most ``max_frames`` (frames,
     10 ms/帧) for memory safety.
     """
 
-    feat_np = np.fromfile(str(features_path), dtype=np.float32)
-    if feat_np.size == 0:
-        raise RuntimeError(f"Empty features file: {features_path}")
-    if feat_np.size % 36 != 0:
-        raise RuntimeError(
-            f"Unexpected feature length {feat_np.size}; expected multiple of 36, got {feat_np.size/36:.3f} frames",
-        )
-    T_total = feat_np.size // 36
-    T = int(min(T_total, max_frames))
-    feats = feat_np.reshape(T_total, 36)[:T]
-    feats36 = torch.from_numpy(feats).to(device=device, dtype=torch.float32)  # [T,36]
+    pcm_i16, feats = load_feature_pcm_pair(
+        features_path=features_path,
+        pcm_path=pcm_path,
+        max_frames=max_frames,
+    )
+    feats36 = torch.from_numpy(feats).to(device=device, dtype=torch.float32)
     feats36 = feats36.unsqueeze(0)  # [1,T,36]
-
-    pcm_i16 = np.fromfile(str(pcm_path), dtype=np.int16)
-    if pcm_i16.size == 0:
-        raise RuntimeError(f"Empty PCM file: {pcm_path}")
-    # Align audio length to T frames (16kHz, 160 samples/frame).
-    L_target = T * 160
-    if pcm_i16.size < L_target:
-        pad = L_target - pcm_i16.size
-        pcm_i16 = np.pad(pcm_i16, (0, pad), mode="edge")
-    else:
-        pcm_i16 = pcm_i16[:L_target]
     audio = torch.from_numpy(pcm_i16.astype(np.float32) / 32768.0).to(device=device)
     audio = audio.unsqueeze(0)  # [1,L]
 
@@ -141,23 +123,23 @@ def run_inference_from_dump(args: argparse.Namespace) -> None:
     out_dir = Path(args.out_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"[Infer-Dump] Using device: {device}")
-    print(f"[Infer-Dump] Loading checkpoint: {ckpt_path}")
+    print(f"[Infer-Features] Using device: {device}")
+    print(f"[Infer-Features] Loading checkpoint: {ckpt_path}")
 
     ckpt = _load_checkpoint(ckpt_path, device=device)
     model, cfg = _build_model_from_ckpt_cfg(ckpt, device=device)
 
     print(
-        f"[Infer-Dump] with_hash={getattr(model, 'with_hash', False)}, "
+        f"[Infer-Features] with_hash={getattr(model, 'with_hash', False)}, "
         f"quantizer_type={getattr(model, 'quantizer_type', 'unknown')}",
     )
 
     max_frames = int(args.max_frames)
     print(
-        f"[Infer-Dump] Loading dump_data outputs: features={feat_path}, pcm={pcm_path}, "
+        f"[Infer-Features] Loading prepared features: features={feat_path}, pcm={pcm_path}, "
         f"max_frames={max_frames}",
     )
-    audio_b, feats_b = _load_dump_data_outputs(feat_path, pcm_path, device, max_frames)
+    audio_b, feats_b = _load_feature_outputs(feat_path, pcm_path, device, max_frames)
 
     # Channel simulator on the same device as the model.
     channel_sim = ChannelSimulator(
@@ -198,7 +180,7 @@ def run_inference_from_dump(args: argparse.Namespace) -> None:
     L = min(audio_real.numel(), audio_hat.numel())
     if audio_real.numel() != audio_hat.numel():
         print(
-            f"[Infer-Dump][DBG] Length mismatch before align: "
+            f"[Infer-Features][DBG] Length mismatch before align: "
             f"real={audio_real.numel()}, gen={audio_hat.numel()} -> using L={L}",
         )
     audio_real = audio_real[:L]
@@ -219,7 +201,7 @@ def run_inference_from_dump(args: argparse.Namespace) -> None:
         audio_gen=audio_hat,
         save_path=str(plot_path),
         sr=16000,
-        title=f"Audio Comparison (from dump_data) - {ckpt_path.name}",
+        title=f"Audio Comparison (from prepared features) - {ckpt_path.name}",
         show_waveform=True,
         hop_length=160,
     )
@@ -235,7 +217,7 @@ def run_inference_from_dump(args: argparse.Namespace) -> None:
         len_f0 = min(len(f0_r), len(f0_g))
         if len(f0_r) != len(f0_g):
             print(
-                f"[Infer-Dump][DBG] F0 length mismatch: real={len(f0_r)}, "
+                f"[Infer-Features][DBG] F0 length mismatch: real={len(f0_r)}, "
                 f"gen={len(f0_g)} -> using len_f0={len_f0}",
             )
         f0_r = f0_r[:len_f0]
@@ -280,20 +262,20 @@ def run_inference_from_dump(args: argparse.Namespace) -> None:
         t_mel = np.arange(T_mel) * 0.01
         mel_real_out = np.concatenate([t_mel[None, :], mel_r], axis=0).T
         mel_gen_out = np.concatenate([t_mel[None, :], mel_g], axis=0).T
-        header_mel = ",".join(["time_s"] + [f"mel_{i}" for i in range(mel_r.shape[0])])
-        np.savetxt(csv_dir / "mel_real.csv", mel_real_out, delimiter=",", header=header_mel)
-        np.savetxt(csv_dir / "mel_gen.csv", mel_gen_out, delimiter=",", header=header_mel)
+        header_mel = ",".join(["time_s"] + [f"bark_{i}" for i in range(mel_r.shape[0])])
+        np.savetxt(csv_dir / "bark_real.csv", mel_real_out, delimiter=",", header=header_mel)
+        np.savetxt(csv_dir / "bark_gen.csv", mel_gen_out, delimiter=",", header=header_mel)
 
-        print(f"[Infer-Dump] CSVs saved under {csv_dir}")
+        print(f"[Infer-Features] CSVs saved under {csv_dir}")
     except Exception as exc:  # pragma: no cover - best effort
-        print(f"[Infer-Dump] WARNING: failed to export CSV diagnostics: {exc}")
+        print(f"[Infer-Features] WARNING: failed to export CSV diagnostics: {exc}")
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="DBP-JSCC inference from dump_data outputs")
+    p = argparse.ArgumentParser(description="DBP-JSCC inference from prepared feature/PCM dumps")
     p.add_argument("--ckpt", type=str, required=True, help="Path to a DBP-JSCC checkpoint")
-    p.add_argument("--features", type=str, required=True, help="Path to dump_data 36D features .f32 file")
-    p.add_argument("--pcm", type=str, required=True, help="Path to dump_data PCM .pcm file")
+    p.add_argument("--features", type=str, required=True, help="Path to prepared 36D vocoder feature .f32 file")
+    p.add_argument("--pcm", type=str, required=True, help="Path to aligned PCM .pcm file")
     p.add_argument("--out_dir", type=str, required=True, help="Output directory for audio/plots/CSVs")
     p.add_argument("--device", type=str, default=None, help="Device override, e.g. 'cuda:0' or 'cpu'")
     p.add_argument("--max_frames", type=int, default=400, help="Maximum number of frames to use (default 400 ≈ 4s)")

@@ -7,8 +7,13 @@ training/
 - spectral_losses.py
 
 scripts/
+- prepare_dataset.py
+- build_feature_tools.sh
+- infer_bits_only.py
 - infer_wav.py
 - infer_features.py
+- jscc_single_sample_export_bits.py
+- jscc_single_sample_decode_from_bits.py
 
 models/
 - dual_branch_bark_jscc.py
@@ -37,6 +42,7 @@ configs/
 - resume_run.json
 
 docs/
+- dataset_preparation.md
 - training_guide.md
 - upload_manifest.txt
 

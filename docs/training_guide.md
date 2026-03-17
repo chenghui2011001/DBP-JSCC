@@ -2,6 +2,7 @@
 
 ## Files
 
+- dataset preparation guide: `docs/dataset_preparation.md`
 - training entrypoint: `training/train.py` for DBP-JSCC
 - multistage pipeline: `training/train_pipeline.py`
 - training helpers: `training/train_support.py`
@@ -10,6 +11,10 @@
 - five-stage pipeline config: `configs/multistage_training.json`
 - inference from WAV: `scripts/infer_wav.py`
 - inference from dumped features: `scripts/infer_features.py`
+- bits-only deployment inference: `scripts/infer_bits_only.py`
+- transmitter-side bit export: `scripts/jscc_single_sample_export_bits.py`
+- receiver-side offline bit decode: `scripts/jscc_single_sample_decode_from_bits.py`
+- dataset preparation: `scripts/prepare_dataset.py`
 
 ## Five-Stage Schedule
 
@@ -61,6 +66,16 @@ python scripts/infer_wav.py \
   --out_dir ./outputs/infer_wav
 ```
 
+Recommended public deployment path from WAV:
+
+```bash
+python scripts/infer_bits_only.py \
+  --ckpt ./checkpoints/dbp_jscc_reference/dbp_jscc_model_only_step703800_epoch42.pth \
+  --wav ./examples/test.wav \
+  --out_dir ./outputs/infer_bits_only \
+  --snr_db 0
+```
+
 From pre-dumped features:
 
 ```bash
@@ -69,6 +84,18 @@ python scripts/infer_features.py \
   --features ./examples/features.f32 \
   --pcm ./examples/audio.pcm \
   --out_dir ./outputs/infer_features
+```
+
+The `.f32 + .pcm` path is optional and mainly for debugging. It is not required for ordinary public inference.
+
+Bits-only deployment inference:
+
+```bash
+python scripts/infer_bits_only.py \
+  --ckpt ./checkpoints/dbp_jscc_reference/dbp_jscc_model_only_step703800_epoch42.pth \
+  --wav ./examples/test.wav \
+  --out_dir ./outputs/infer_bits_only \
+  --snr_db 0
 ```
 
 ## Paths To Edit Before Running
@@ -84,10 +111,34 @@ python scripts/infer_features.py \
   - `fsk_ber_table`
   - `out_dir`
 
+## Training Dataset Format
+
+The current public loader expects aligned PCM and feature streams on disk.
+
+Minimal layout:
+
+```text
+data/
+  out_speech.pcm
+  lmr_export/
+    features_36_vocoder_baseline.f32
+```
+
+Recommended preparation command:
+
+```bash
+python scripts/prepare_dataset.py \
+  /path/to/audio/*.wav \
+  --out_root ./data \
+  --feature_bin /home/bluestar/fargan_demo/fargan_demo
+```
+
+See `docs/dataset_preparation.md` for the exact generation workflow and the optional expert-mixed layout.
+
 ## Local Assets Not Shipped In Git
 
 - dataset directory
 - pretrained vocoder weights
 - BER lookup table
-- external `dump_data` executable
+- external feature extractor executable
 - compiled selective-scan CUDA dependency

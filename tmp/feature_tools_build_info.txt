@@ -1,0 +1,17 @@
+# DBP-JSCC Feature Tools Build Information
+# ========================================
+
+## 1. Source Code Directory
+Source tree: /home/FARGAN/opus
+
+## 2. Build Commands
+### Step 1: Configure the build (enable deep-plc feature)
+./configure --enable-deep-plc
+
+### Step 2: Compile target tools (parallel build with all CPU cores)
+make -j$(nproc) dump_data fargan_demo
+
+## 3. Notes
+- The `-j$(nproc)` flag uses all available CPU cores to speed up compilation
+- Target binaries: dump_data, fargan_demo
+- Build dependency: Opus development environment (autoconf, make, gcc etc.)

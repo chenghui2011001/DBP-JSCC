@@ -69,7 +69,9 @@ class AETHERRealDataset(Dataset):
         else:
             # 根据特征规范选择对应的特征文件
             if self.feature_spec.total_dim == 36:
-                features_path = self.data_dir / "lmr_export" / "features_36_fargan_baseline.f32"
+                preferred = self.data_dir / "lmr_export" / "features_36_vocoder_baseline.f32"
+                legacy = self.data_dir / "lmr_export" / "features_36_fargan_baseline.f32"
+                features_path = preferred if preferred.exists() else legacy
             else:
                 features_path = self.data_dir / "lmr_export" / "features_48_complete.f32"
 
