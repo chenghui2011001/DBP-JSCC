@@ -2,7 +2,7 @@
 
 DBP-JSCC is a speech joint source-channel coding system built around a dual-branch architecture:
 
-- a content branch that transmits a 32-bin Bark/BFCC image with a 2D JSCC backbone
+- a content branch that transmits a Bark/BFCC image with a 2D JSCC backbone
 - an F0/voicing branch that preserves pitch and voicing cues
 - a lightweight vocoder that reconstructs waveform from decoded acoustic features
 
